@@ -1,0 +1,12 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Stray local notes that shouldn't be committed (contains secrets — see chat)
+env.txt
+
+# Editor
+.vscode/
+.idea/
+
+# web/ has its own .gitignore for node_modules, .next, .env*, etc.
