@@ -5,6 +5,10 @@ Thumbs.db
 # Stray local notes that shouldn't be committed (contains secrets — see chat)
 env.txt
 
+# Source drop for the app icon — the actual source of truth is
+# web/scripts/logo-source.png (copied from this on 2026-09-13)
+1vbY5tJWKDr_4WsRQz-EVjqwYiizenXdeV-wbxUtr.png
+
 # Editor
 .vscode/
 .idea/
