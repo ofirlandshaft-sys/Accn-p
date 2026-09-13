@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import styles from "./HowWorkedClient.module.css";
 
 interface Block {
@@ -93,7 +94,8 @@ export default function HowWorkedClient() {
 
   function handleSelectEmployee(name: string) {
     setSelectedEmployee(name);
-    setScheduleState(count ? { status: "loading" } : { status: "idle" });
+    setCount(null); // always require an explicit (re-)choice of count per employee
+    setScheduleState({ status: "idle" });
   }
 
   function handleSelectCount(n: number) {
@@ -103,6 +105,28 @@ export default function HowWorkedClient() {
 
   return (
     <div className={styles.page}>
+      <Link
+        href="/"
+        style={{
+          position: "fixed",
+          top: 14,
+          insetInlineEnd: 16,
+          zIndex: 10,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          fontSize: 13,
+          color: "var(--text-muted)",
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          padding: "6px 12px",
+          textDecoration: "none",
+        }}
+      >
+        › חזרה לתפריט הראשי
+      </Link>
+
       <header className={styles.top}>
         <h1 className={styles.h1}>איך עבד X?</h1>
         <p className={styles.lede}>
