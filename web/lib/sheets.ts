@@ -1,6 +1,6 @@
 import "server-only";
-import ExcelJS from "exceljs";
-import { getAuthClient } from "./google-auth";
+import type ExcelJS from "exceljs";
+import { downloadWorkbook, cellText, extractDayNumber } from "./xlsx-utils";
 import type { MatrixData } from "./matrix-types";
 
 // See docs/matrix-algorithm.md and docs/data-source.md — this ports that
@@ -13,64 +13,16 @@ const HEADER_ROW = 3;
 const FIRST_EMPLOYEE_ROW = 4;
 const WORK_CODES = new Set(["x", "|x|"]);
 
-/** Downloads the sheet as .xlsx via Drive's export endpoint (no separate Sheets API scope needed). */
-async function downloadWorkbook(fileId: string): Promise<ExcelJS.Workbook> {
-  const auth = getAuthClient();
-  const res = await auth.request<ArrayBuffer>({
-    url: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export`,
-    params: {
-      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    },
-    responseType: "arraybuffer",
-  });
-
-  const workbook = new ExcelJS.Workbook();
-  // exceljs's bundled .d.ts predates @types/node's generic `Buffer<T>`
-  // change and declares its own incompatible `Buffer` shape for this param
-  // (missing maxByteLength/resizable/etc.) — a real Buffer works fine at
-  // runtime, so `any` sidesteps the type-only mismatch.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await workbook.xlsx.load(Buffer.from(res.data) as any);
-  return workbook;
+interface ParsedRoster {
+  names: string[];
+  shifts: number[];
+  employeeRows: number[];
+  dayColumns: number[];
+  ws: ExcelJS.Worksheet;
 }
 
-/** Excel/Sheets store computed formula results alongside the formula itself — unwrap either shape. */
-function rawCellValue(value: ExcelJS.CellValue): unknown {
-  if (value != null && typeof value === "object") {
-    if ("result" in value) return (value as { result?: unknown }).result;
-    if ("text" in value) return (value as { text?: unknown }).text;
-    if ("richText" in value) {
-      return (value as { richText: { text: string }[] }).richText.map((r) => r.text).join("");
-    }
-  }
-  return value;
-}
-
-function cellText(cell: ExcelJS.Cell): string {
-  const v = rawCellValue(cell.value);
-  return v == null ? "" : String(v).trim();
-}
-
-const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
-
-/** Header cells for day columns are dates (Sep 1, Sep 2, ...) — extract the day-of-month number. */
-function extractDayNumber(cell: ExcelJS.Cell): number | null {
-  const v = rawCellValue(cell.value);
-  if (v == null) return null;
-  if (v instanceof Date) return v.getUTCDate();
-  if (typeof v === "number") {
-    if (v >= 1 && v <= 31 && Number.isInteger(v)) return v; // already a plain day number
-    const asDate = new Date(EXCEL_EPOCH_UTC_MS + v * 86_400_000);
-    return asDate.getUTCDate();
-  }
-  return null;
-}
-
-/**
- * Reads the roster tab of the given Drive file and computes the same
- * shift-partner matrix as the two static prototypes in reference/.
- */
-export async function getMonthlyMatrix(fileId: string): Promise<MatrixData> {
+/** Shared parse of the roster tab: header/day-column detection + employee rows. */
+async function parseRoster(fileId: string): Promise<ParsedRoster> {
   const workbook = await downloadWorkbook(fileId);
   const ws = workbook.getWorksheet(ROSTER_SHEET_NAME);
   if (!ws) {
@@ -120,6 +72,15 @@ export async function getMonthlyMatrix(fileId: string): Promise<MatrixData> {
     throw new Error("לא נמצאו שורות עובדים בגיליון (עמודה D החל משורה 4).");
   }
 
+  return { names, shifts, employeeRows, dayColumns, ws };
+}
+
+/**
+ * Reads the roster tab of the given Drive file and computes the same
+ * shift-partner matrix as the two static prototypes in reference/.
+ */
+export async function getMonthlyMatrix(fileId: string): Promise<MatrixData> {
+  const { names, shifts, employeeRows, dayColumns, ws } = await parseRoster(fileId);
   const n = names.length;
 
   // Step 1 (docs/matrix-algorithm.md): who worked each day.
@@ -158,4 +119,26 @@ export async function getMonthlyMatrix(fileId: string): Promise<MatrixData> {
   const rowSums = matrix.map((row) => row.reduce((a, b) => a + b, 0));
 
   return { names, matrix, rowSums, shifts, pairDays };
+}
+
+/** Just the employee name list from a roster file (for the "how did X work" picker). */
+export async function getRosterNames(fileId: string): Promise<string[]> {
+  const { names } = await parseRoster(fileId);
+  return names;
+}
+
+/** Day-of-month numbers (ascending) on which this employee had an actual worked shift. */
+export async function getEmployeeWorkDays(fileId: string, employeeName: string): Promise<number[]> {
+  const { names, employeeRows, dayColumns, ws } = await parseRoster(fileId);
+  const idx = names.indexOf(employeeName);
+  if (idx === -1) {
+    throw new Error(`העובד/ת "${employeeName}" לא נמצא/ה בסידור הזה.`);
+  }
+  const row = employeeRows[idx];
+  const days: number[] = [];
+  dayColumns.forEach((col, dayIdx) => {
+    const code = cellText(ws.getRow(row).getCell(col));
+    if (WORK_CODES.has(code)) days.push(dayIdx + 1);
+  });
+  return days;
 }

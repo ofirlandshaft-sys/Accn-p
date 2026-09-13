@@ -17,7 +17,7 @@ const SPREADSHEET_MIME_TYPES = new Set([
 
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
-interface DriveFile {
+export interface DriveFile {
   id: string;
   name: string;
   mimeType: string;
@@ -30,7 +30,7 @@ interface DriveFilesListResponse {
 }
 
 /** Lists the immediate (non-recursive) children of a Drive folder, paginated. */
-async function listChildren(auth: OAuth2Client, folderId: string): Promise<DriveFile[]> {
+export async function listChildren(auth: OAuth2Client, folderId: string): Promise<DriveFile[]> {
   const files: DriveFile[] = [];
   let pageToken: string | undefined;
 
