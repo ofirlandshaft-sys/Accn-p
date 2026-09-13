@@ -18,9 +18,8 @@ interface ShiftDay {
 
 interface ScheduleResponse {
   employee: string;
-  monthlyFileName: string;
-  dailyFileName: string;
   totalWorkDaysThisMonth: number;
+  monthsSpanned: number;
   shifts: ShiftDay[];
 }
 
@@ -170,13 +169,15 @@ export default function HowWorkedClient() {
       {scheduleState.status === "ready" && (
         <>
           <p className={styles.meta}>
-            {scheduleState.data.employee} עבד/ה {scheduleState.data.totalWorkDaysThisMonth} משמרות החודש
-            (מקור: {scheduleState.data.monthlyFileName}) — מוצגות {scheduleState.data.shifts.length} האחרונות
-            מתוכן, לפי {scheduleState.data.dailyFileName}.
+            {scheduleState.data.employee} עבד/ה {scheduleState.data.totalWorkDaysThisMonth} משמרות החודש —
+            מוצגות {scheduleState.data.shifts.length} המשמרות האחרונות
+            {scheduleState.data.monthsSpanned > 1
+              ? ` (נאספו מ-${scheduleState.data.monthsSpanned} חודשים אחורה, כי לא היו מספיק החודש).`
+              : "."}
           </p>
 
           {scheduleState.data.shifts.length === 0 ? (
-            <p className={styles.state}>לא נמצאו משמרות עבור עובד/ת זה בחודש הנוכחי.</p>
+            <p className={styles.state}>לא נמצאו משמרות עבור עובד/ת זה.</p>
           ) : (
             <div className={styles.tableScroll}>
               <table className={styles.table}>

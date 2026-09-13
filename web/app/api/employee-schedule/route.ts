@@ -1,10 +1,20 @@
 import { NextResponse } from "next/server";
 import { listScheduleFiles } from "@/lib/google-drive";
 import { getEmployeeWorkDays } from "@/lib/sheets";
-import { findDailyScheduleFile, getEmployeeBlocksForDays } from "@/lib/daily-schedule";
+import { findDailyScheduleFile, getEmployeeBlocksForDays, type DailyBlock } from "@/lib/daily-schedule";
 import { getIsraelToday, isOnOrBefore } from "@/lib/date-utils";
 
 export const dynamic = "force-dynamic";
+
+// Safety cap on how many months we'll walk backward looking for enough
+// shifts — normal usage (last 1-5 shifts) should never need more than 1-2.
+const MAX_MONTHS_BACK = 6;
+
+interface CollectedDay {
+  day: number;
+  month: number;
+  year: number;
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -17,38 +27,87 @@ export async function GET(request: Request) {
   }
 
   try {
-    const files = await listScheduleFiles();
-    const latest = files[0];
-    if (!latest) throw new Error("לא נמצאו קבצי סידור ב-Drive.");
-    if (latest.month == null || latest.year == null) {
-      throw new Error(`לא ניתן לזהות חודש/שנה מתוך שם הקובץ "${latest.name}".`);
-    }
+    const files = await listScheduleFiles(); // newest first, both Drive folders
+    if (files.length === 0) throw new Error("לא נמצאו קבצי סידור ב-Drive.");
 
-    const allWorkDays = await getEmployeeWorkDays(latest.id, employee); // ascending
-    // Only count shifts that have actually happened — the roster can contain
-    // the rest of the (still in-progress) month too, scheduled but not yet worked.
     const today = getIsraelToday();
-    const workDays = allWorkDays.filter((day) => isOnOrBefore(latest.year as number, latest.month as number, day, today));
-    const lastDays = workDays.slice(-count).reverse(); // most recent first
+    const dailyFileCache = new Map<string, { id: string; name: string } | null>();
+    const collected: CollectedDay[] = [];
+    let currentMonthCompletedShifts: number | null = null; // stat for the newest month only
+    let monthsScanned = 0;
 
-    const dailyFile = await findDailyScheduleFile(latest.month, latest.year);
-    if (!dailyFile) {
-      throw new Error(`לא נמצא קובץ "סידור יומי" עבור ${latest.month}/${latest.year}.`);
+    for (const file of files) {
+      if (collected.length >= count || monthsScanned >= MAX_MONTHS_BACK) break;
+      if (file.month == null || file.year == null) continue; // unparsable file name — skip
+
+      // A roster file for a month that hasn't started yet (shouldn't normally
+      // exist, but guard anyway) has nothing "already worked" in it.
+      const isFutureMonth = file.year > today.year || (file.year === today.year && file.month > today.month);
+      if (isFutureMonth) continue;
+
+      let workDaysThisFile: number[];
+      try {
+        workDaysThisFile = await getEmployeeWorkDays(file.id, employee);
+      } catch {
+        continue; // employee not found in this month's roster — skip it
+      }
+
+      const isCurrentRealMonth = file.year === today.year && file.month === today.month;
+      const eligibleDays = isCurrentRealMonth
+        ? workDaysThisFile.filter((d) => isOnOrBefore(file.year as number, file.month as number, d, today))
+        : workDaysThisFile; // any other listed month is entirely in the past already
+
+      if (currentMonthCompletedShifts === null) {
+        // First file we successfully parse is the newest one — that's "this month" for the stat line.
+        currentMonthCompletedShifts = eligibleDays.length;
+      }
+
+      monthsScanned++;
+
+      const key = `${file.year}-${file.month}`;
+      let dailyFile = dailyFileCache.get(key);
+      if (dailyFile === undefined) {
+        dailyFile = await findDailyScheduleFile(file.month, file.year);
+        dailyFileCache.set(key, dailyFile);
+      }
+      if (!dailyFile) continue; // no daily-schedule file for this month — can't show blocks for it
+
+      const remainingNeeded = count - collected.length;
+      const daysToTake = eligibleDays.slice(-remainingNeeded).reverse(); // most recent first, within this file
+      for (const day of daysToTake) {
+        collected.push({ day, month: file.month, year: file.year });
+      }
     }
 
-    const blocksByDay = await getEmployeeBlocksForDays(dailyFile.id, lastDays, employee);
-    const shifts = lastDays.map((day) => ({
-      day,
-      month: latest.month as number,
-      year: latest.year as number,
-      blocks: blocksByDay.get(day) ?? [],
+    // Fetch blocks, grouped by month, so each daily-schedule workbook is only downloaded once.
+    const byMonthKey = new Map<string, number[]>();
+    for (const c of collected) {
+      const key = `${c.year}-${c.month}`;
+      if (!byMonthKey.has(key)) byMonthKey.set(key, []);
+      byMonthKey.get(key)!.push(c.day);
+    }
+
+    const blocksByKey = new Map<string, DailyBlock[]>();
+    for (const [key, days] of byMonthKey) {
+      const dailyFile = dailyFileCache.get(key);
+      if (!dailyFile) continue;
+      const blocksByDay = await getEmployeeBlocksForDays(dailyFile.id, days, employee);
+      for (const [day, blocks] of blocksByDay) {
+        blocksByKey.set(`${key}-${day}`, blocks);
+      }
+    }
+
+    const shifts = collected.map((c) => ({
+      day: c.day,
+      month: c.month,
+      year: c.year,
+      blocks: blocksByKey.get(`${c.year}-${c.month}-${c.day}`) ?? [],
     }));
 
     return NextResponse.json({
       employee,
-      monthlyFileName: latest.name,
-      dailyFileName: dailyFile.name,
-      totalWorkDaysThisMonth: workDays.length,
+      totalWorkDaysThisMonth: currentMonthCompletedShifts ?? 0,
+      monthsSpanned: monthsScanned,
       shifts,
     });
   } catch (err) {
