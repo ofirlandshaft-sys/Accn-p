@@ -30,10 +30,21 @@ const END_COL = 4; // D
 const NAME_SCAN_FIRST_COL = 5; // E
 const NAME_SCAN_LAST_COL = 13; // M
 
+// Per Ofir: the shift manager for the day is the first employee listed in
+// the daily schedule's employee list, always at a fixed cell — T12 — on
+// every day tab, regardless of the C:M block structure for that day.
+const MANAGER_ROW = 12;
+const MANAGER_COL = 20; // T
+
 export interface DailyBlock {
   start: string;
   end: string;
   worked: boolean;
+}
+
+export interface DailyScheduleDay {
+  blocks: DailyBlock[];
+  shiftManager: string;
 }
 
 /** Finds the daily-schedule file for a given month/year, if one exists. */
@@ -72,18 +83,22 @@ function extractBlocksFromSheet(ws: ExcelJS.Worksheet, employeeName: string): Da
   return blocks;
 }
 
-/** The 12 two-hour blocks (09:00 -> 09:00 next day) for one employee on one day-of-month. */
+function extractShiftManager(ws: ExcelJS.Worksheet): string {
+  return cellText(ws.getRow(MANAGER_ROW).getCell(MANAGER_COL));
+}
+
+/** The blocks (09:00 -> 09:00 next day) and shift manager for one employee on one day-of-month. */
 export async function getEmployeeBlocksForDay(
   fileId: string,
   day: number,
   employeeName: string,
-): Promise<DailyBlock[]> {
+): Promise<DailyScheduleDay> {
   const workbook = await downloadWorkbook(fileId);
   const ws = workbook.getWorksheet(String(day));
   if (!ws) {
     throw new Error(`טאב היום ${day} לא נמצא בקובץ הסידור היומי.`);
   }
-  return extractBlocksFromSheet(ws, employeeName);
+  return { blocks: extractBlocksFromSheet(ws, employeeName), shiftManager: extractShiftManager(ws) };
 }
 
 /** Same as getEmployeeBlocksForDay, but for several days at once — downloads the (shared) workbook only once. */
@@ -91,15 +106,15 @@ export async function getEmployeeBlocksForDays(
   fileId: string,
   days: number[],
   employeeName: string,
-): Promise<Map<number, DailyBlock[]>> {
+): Promise<Map<number, DailyScheduleDay>> {
   const workbook = await downloadWorkbook(fileId);
-  const result = new Map<number, DailyBlock[]>();
+  const result = new Map<number, DailyScheduleDay>();
   for (const day of days) {
     const ws = workbook.getWorksheet(String(day));
     if (!ws) {
       throw new Error(`טאב היום ${day} לא נמצא בקובץ הסידור היומי.`);
     }
-    result.set(day, extractBlocksFromSheet(ws, employeeName));
+    result.set(day, { blocks: extractBlocksFromSheet(ws, employeeName), shiftManager: extractShiftManager(ws) });
   }
   return result;
 }

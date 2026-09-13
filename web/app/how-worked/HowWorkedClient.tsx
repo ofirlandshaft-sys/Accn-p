@@ -8,6 +8,7 @@ interface Column {
   day: number;
   month: number;
   year: number;
+  shiftManager: string;
 }
 
 interface Row {
@@ -15,14 +16,20 @@ interface Row {
   end: string;
 }
 
+interface ScheduleTable {
+  /** Columns sharing an identical hour scheme, so this table's rows need no more granularity than they do. */
+  columns: Column[];
+  rows: Row[];
+  /** worked[rowIndex][columnIndex], local to this table. */
+  worked: boolean[][];
+}
+
 interface ScheduleResponse {
   employee: string;
   totalWorkDaysThisMonth: number;
   monthsSpanned: number;
-  columns: Column[];
-  rows: Row[];
-  /** worked[rowIndex][columnIndex] — rows are a shared grid across columns that may use different block durations. */
-  worked: boolean[][];
+  /** Days with a different hour scheme than the rest render as separate tables. */
+  tables: ScheduleTable[];
 }
 
 type EmployeesState =
@@ -195,51 +202,56 @@ export default function HowWorkedClient() {
         <>
           <p className={styles.meta}>
             {scheduleState.data.employee} עבד/ה {scheduleState.data.totalWorkDaysThisMonth} משמרות החודש —
-            מוצגות {scheduleState.data.columns.length} המשמרות האחרונות
+            מוצגות {scheduleState.data.tables.reduce((sum, t) => sum + t.columns.length, 0)} המשמרות האחרונות
             {scheduleState.data.monthsSpanned > 1
               ? ` (נאספו מ-${scheduleState.data.monthsSpanned} חודשים אחורה, כי לא היו מספיק החודש).`
               : "."}
           </p>
 
-          {scheduleState.data.columns.length === 0 ? (
+          {scheduleState.data.tables.length === 0 ? (
             <p className={styles.state}>לא נמצאו משמרות עבור עובד/ת זה.</p>
           ) : (
-            <div className={styles.tableScroll}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th className={styles.hourHead}>שעות</th>
-                    {scheduleState.data.columns.map((c) => (
-                      <th key={`${c.year}-${c.month}-${c.day}`} className={styles.dateHead}>
-                        {c.day}.{c.month}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {scheduleState.data.rows.map((row, rowIdx) => (
-                    <tr key={rowIdx}>
-                      <th className={styles.hourCell}>
-                        <span style={{ direction: "ltr", unicodeBidi: "isolate" }}>
-                          {row.start}–{row.end}
-                        </span>
-                      </th>
-                      {scheduleState.data.columns.map((c, colIdx) => {
-                        const worked = scheduleState.data.worked[rowIdx][colIdx];
-                        return (
-                          <td
-                            key={`${c.year}-${c.month}-${c.day}`}
-                            className={`${styles.cell} ${worked ? styles.worked : styles.notWorked}`}
-                          >
-                            {worked ? "✓" : "–"}
-                          </td>
-                        );
-                      })}
+            scheduleState.data.tables.map((table, tableIdx) => (
+              <div key={tableIdx} className={styles.tableScroll}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th className={styles.hourHead}>שעות</th>
+                      {table.columns.map((c) => (
+                        <th key={`${c.year}-${c.month}-${c.day}`} className={styles.dateHead}>
+                          <span className={styles.dateLine}>
+                            {c.day}.{c.month}
+                          </span>
+                          {c.shiftManager && <span className={styles.managerLine}>{c.shiftManager}</span>}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {table.rows.map((row, rowIdx) => (
+                      <tr key={rowIdx}>
+                        <th className={styles.hourCell}>
+                          <span style={{ direction: "ltr", unicodeBidi: "isolate" }}>
+                            {row.start}–{row.end}
+                          </span>
+                        </th>
+                        {table.columns.map((c, colIdx) => {
+                          const worked = table.worked[rowIdx][colIdx];
+                          return (
+                            <td
+                              key={`${c.year}-${c.month}-${c.day}`}
+                              className={`${styles.cell} ${worked ? styles.worked : styles.notWorked}`}
+                            >
+                              {worked ? "✓" : "–"}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))
           )}
         </>
       )}

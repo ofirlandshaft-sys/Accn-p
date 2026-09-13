@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { listScheduleFiles } from "@/lib/google-drive";
 import { getEmployeeWorkDays } from "@/lib/sheets";
-import { findDailyScheduleFile, getEmployeeBlocksForDays, type DailyBlock } from "@/lib/daily-schedule";
+import { findDailyScheduleFile, getEmployeeBlocksForDays, type DailyScheduleDay } from "@/lib/daily-schedule";
 import { getIsraelToday, isOnOrBefore } from "@/lib/date-utils";
-import { buildUnifiedGrid } from "@/lib/shift-grid";
+import { buildGroupedGrids } from "@/lib/shift-grid";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,10 @@ interface CollectedDay {
   day: number;
   month: number;
   year: number;
+}
+
+interface CollectedDayWithManager extends CollectedDay {
+  shiftManager: string;
 }
 
 export async function GET(request: Request) {
@@ -88,29 +92,39 @@ export async function GET(request: Request) {
       byMonthKey.get(key)!.push(c.day);
     }
 
-    const blocksByKey = new Map<string, DailyBlock[]>();
+    const dayDataByKey = new Map<string, DailyScheduleDay>();
     for (const [key, days] of byMonthKey) {
       const dailyFile = dailyFileCache.get(key);
       if (!dailyFile) continue;
-      const blocksByDay = await getEmployeeBlocksForDays(dailyFile.id, days, employee);
-      for (const [day, blocks] of blocksByDay) {
-        blocksByKey.set(`${key}-${day}`, blocks);
+      const dataByDay = await getEmployeeBlocksForDays(dailyFile.id, days, employee);
+      for (const [day, dayData] of dataByDay) {
+        dayDataByKey.set(`${key}-${day}`, dayData);
       }
     }
 
-    const perColumnBlocks = collected.map((c) => blocksByKey.get(`${c.year}-${c.month}-${c.day}`) ?? []);
-    // Different days can use different block durations (e.g. 12x2h vs 16x1.5h) —
-    // merge them into one shared, correctly-aligned row grid rather than assuming
-    // every column shares the same block boundaries.
-    const grid = buildUnifiedGrid(perColumnBlocks);
+    const columns: CollectedDayWithManager[] = collected.map((c) => {
+      const dayData = dayDataByKey.get(`${c.year}-${c.month}-${c.day}`);
+      return { ...c, shiftManager: dayData?.shiftManager ?? "" };
+    });
+    const perColumnBlocks = collected.map(
+      (c) => dayDataByKey.get(`${c.year}-${c.month}-${c.day}`)?.blocks ?? [],
+    );
+
+    // Different days can use different block durations (e.g. 12x2h vs 16x1.5h).
+    // Per Ofir: rather than forcing everything into one merged grid (which adds
+    // narrow rows just to accommodate one oddly-shaped day), group columns that
+    // share an identical hour scheme into their own table each.
+    const tables = buildGroupedGrids(perColumnBlocks).map((t) => ({
+      columns: t.columnIndices.map((idx) => columns[idx]),
+      rows: t.rows,
+      worked: t.worked,
+    }));
 
     return NextResponse.json({
       employee,
       totalWorkDaysThisMonth: currentMonthCompletedShifts ?? 0,
       monthsSpanned: monthsScanned,
-      columns: collected,
-      rows: grid.rows,
-      worked: grid.worked,
+      tables,
     });
   } catch (err) {
     console.error(`Failed to build "how did ${employee} work" view:`, err);

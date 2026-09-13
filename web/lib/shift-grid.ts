@@ -86,3 +86,48 @@ export function buildUnifiedGrid(perColumnBlocks: DailyBlock[][]): UnifiedGrid {
 
   return { rows, worked };
 }
+
+export interface GroupedTable {
+  /** Indices into the original perColumnBlocks array, in their original order. */
+  columnIndices: number[];
+  rows: UnifiedRow[];
+  worked: boolean[][];
+}
+
+function blockBoundarySignature(blocks: DailyBlock[]): string {
+  const bounds = new Set<number>();
+  for (const b of blocks) {
+    const start = minutesSinceCycleStart(b.start);
+    let end = minutesSinceCycleStart(b.end);
+    if (start == null || end == null) continue;
+    if (end === 0) end = CYCLE_MINUTES;
+    bounds.add(start);
+    bounds.add(end);
+  }
+  return [...bounds].sort((a, b) => a - b).join(",");
+}
+
+/**
+ * Per Ofir: when the days requested don't all share the same hour scheme,
+ * a single merged grid (buildUnifiedGrid) produces extra narrow rows that
+ * only exist to accommodate one oddly-shaped day. Prefer this instead for
+ * display: group columns that share an *identical* set of block boundaries,
+ * and build one (naturally-grained) table per group. A column with a block
+ * scheme found nowhere else among the selection gets its own single-column
+ * table. Group order follows first appearance in perColumnBlocks.
+ */
+export function buildGroupedGrids(perColumnBlocks: DailyBlock[][]): GroupedTable[] {
+  const groups = new Map<string, number[]>();
+  perColumnBlocks.forEach((blocks, idx) => {
+    const sig = blockBoundarySignature(blocks);
+    if (!groups.has(sig)) groups.set(sig, []);
+    groups.get(sig)!.push(idx);
+  });
+
+  const tables: GroupedTable[] = [];
+  for (const columnIndices of groups.values()) {
+    const grid = buildUnifiedGrid(columnIndices.map((idx) => perColumnBlocks[idx]));
+    tables.push({ columnIndices, rows: grid.rows, worked: grid.worked });
+  }
+  return tables;
+}

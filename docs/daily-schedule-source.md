@@ -34,7 +34,11 @@ gotcha (variable block duration) that's easy to silently get wrong.
 - Beyond column M: a **separate table** (`SO`, `CIC`, `כונן 1/2`,
   `טכנאי 1/2`, `זיהוי`, ...) — fixed day-long role assignments, not
   time-blocked. **Not used** by the current feature (per Ofir: only presence
-  in the C:M block grid matters, not which specific role/team).
+  in the C:M block grid matters, not which specific role/team) — **except**
+  for one cell: **T12** always holds the **shift manager**'s name (per Ofir:
+  "the first employee in the daily schedule's employee list"), which
+  `lib/daily-schedule.ts` does read (`extractShiftManager`) and which
+  `/how-worked` shows under each date column.
 - **Row ~60**: `"זמני הגעה:"` (arrival times) footer — ignore.
 
 ## Gotcha already found — don't rediscover it
@@ -51,12 +55,23 @@ first blank start/end (see `extractBlocksFromSheet` in
 
 Because different days can legitimately have different block durations, a
 table spanning several days **cannot** align columns by row index — it must
-align by actual time overlap. See `lib/shift-grid.ts` (`buildUnifiedGrid`),
-which merges any number of per-day block lists into one shared, correctly
-time-aligned row grid via interval containment. Verified against real data:
-merging the January (16×1.5h) day above with a September (12×2h) day for the
-same employee produces a correct 24-row combined grid
-(`scripts/test-unified-grid.mjs`).
+align by actual time overlap. `lib/shift-grid.ts` has two functions:
+- `buildUnifiedGrid` — merges any number of per-day block lists into **one**
+  shared, correctly time-aligned row grid via interval containment. Verified
+  against real data: merging the January (16×1.5h) day above with a
+  September (12×2h) day for the same employee produces a correct 24-row
+  combined grid (`scripts/test-unified-grid.mjs`).
+- `buildGroupedGrids` — **what `/how-worked` actually displays.** Per Ofir:
+  a single merged grid across mismatched days adds narrow rows just to
+  accommodate one oddly-shaped day, which is harder to read. Instead, this
+  groups the selected days by **identical block-boundary signature** and
+  returns one table per group (internally calling `buildUnifiedGrid` per
+  group, where it's a no-op merge since every column already shares the
+  same boundaries) — a day whose scheme matches no other selected day gets
+  its own single-column table. Verified against real data:
+  `scripts/demo-employee-days-grouped.mjs` against employee אייל / file
+  `1SyzUqCup0x6N9-JopoCwM7Mt8K2GfcqNEmR1mBo2itM` / days 2,5,9 correctly
+  splits into a 16-row table (day 2 alone) and a 12-row table (days 5+9).
 
 ## How this was investigated
 

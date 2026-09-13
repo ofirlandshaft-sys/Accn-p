@@ -76,7 +76,8 @@ app/
     employees/route.ts         — GET: employee name list from the newest roster file
     employee-schedule/route.ts — GET ?employee=&count=: walks back across months
                                   (roster files) collecting completed shifts, fetches
-                                  their daily-schedule blocks, merges into a unified grid
+                                  their daily-schedule blocks + shift-manager name, groups
+                                  them into one or more hour-scheme-aligned tables
     auth/login/route.ts       — starts the Google sign-in OAuth flow
     auth/callback/route.ts    — exchanges code, checks ALLOWED_EMAILS, sets session cookie
     auth/logout/route.ts      — clears the session cookie
@@ -95,9 +96,13 @@ lib/
                                   employee names, per-employee work-days)
   daily-schedule.ts              — finds/parses the "סידורים יומיים" daily-schedule
                                   files; block detection is data-driven (see
-                                  docs/daily-schedule-source.md), not a fixed row range
-  shift-grid.ts                   — merges several days' (possibly different-duration)
-                                  block lists into one time-aligned row grid
+                                  docs/daily-schedule-source.md), not a fixed row range;
+                                  also reads each day's shift-manager name (fixed cell T12)
+  shift-grid.ts                   — buildUnifiedGrid: merges several days' (possibly
+                                  different-duration) block lists into one time-aligned
+                                  row grid. buildGroupedGrids: groups columns that share
+                                  an identical hour scheme into one table each instead —
+                                  what /how-worked actually renders with (see below)
   date-utils.ts                  — "today" in Israel's timezone + date comparison,
                                   used to exclude not-yet-happened shifts
   auth-login.ts                 — OAuth2Client for the **sign-in gate** (separate
@@ -221,16 +226,28 @@ The `/how-worked` feature ("איך עבד X?"), end to end:
    sorted newest-first across both roster folders) until it has enough or
    hits a 6-month cap.
 3. For each collected day, it finds that month's daily-schedule file and
-   extracts the employee's blocks (`lib/daily-schedule.ts`).
+   extracts the employee's blocks **and that day's shift-manager name**
+   (fixed cell **T12** — per Ofir, "the first employee in the daily
+   schedule's employee list") via `lib/daily-schedule.ts`.
 4. Because different days' blocks can have different durations, the result
-   is **not** rendered by row index — `lib/shift-grid.ts` merges all
-   selected days into one shared, correctly time-aligned row grid first.
-5. Frontend UX (per Ofir, twice-corrected): selecting an employee always
+   is **not** rendered by row index, and — per Ofir's explicit preference —
+   is **not** forced into one merged fine-grained grid either (that produced
+   extra narrow rows just to accommodate one oddly-shaped day). Instead
+   `lib/shift-grid.ts`'s `buildGroupedGrids` groups the selected days by
+   **identical hour scheme** and returns **one table per group** (a day with
+   a scheme found nowhere else among the selection gets its own
+   single-column table); `buildUnifiedGrid` (the original single-merged-grid
+   function) still exists and is used internally per group, but the API
+   response is now `{ tables: [{ columns, rows, worked }, ...] }`, not flat
+   `columns/rows/worked`.
+5. Each column in a table's header shows the date **and**, on a second line
+   beneath it, that day's shift-manager name.
+6. Frontend UX (per Ofir, twice-corrected): selecting an employee always
    resets the shift-count choice to unselected, and nothing is fetched
    until **both** an employee and a count are explicitly chosen — no
    fetch-on-employee-select-alone, and no stale count carried over to a
    newly selected employee.
-6. "Today" for excluding future-scheduled shifts is computed in **Israel's
+7. "Today" for excluding future-scheduled shifts is computed in **Israel's
    timezone** (`lib/date-utils.ts`), not the server's own (Vercel runs UTC).
 
 ## The matrix algorithm (validated in Python, now also in TypeScript)
