@@ -45,12 +45,21 @@ just static prototypes — see below for what that means concretely.
   were later replaced with Ofir's "Tel Aviv Control" logo (source:
   `web/scripts/logo-source.png`, regenerated via `web/scripts/gen-icons.mjs`).
 - **Second feature shipped: "איך עבד X?"** (`/how-worked`) — pick an
-  employee and a shift count (1–5), see which 2-hour-ish time blocks they
-  were scheduled in for their last N *completed* shifts, read live from a
+  employee and a shift count (1–5), see which time blocks they were
+  scheduled in for their last N *completed* shifts, read live from a
   **third Drive folder** ("סידורים יומיים", daily schedules — separate from
-  the two roster folders). See "The daily-schedule data source" section
-  below and **`docs/daily-schedule-source.md`** before touching this code —
-  it has a real gotcha (block duration/count is not fixed per day).
+  the two roster folders). Each shift's column also shows that day's
+  **shift manager** (fixed cell T12). Days with different hour schemes (not
+  every day uses 2-hour blocks) render as **separate tables grouped by
+  matching scheme**, not one forced merged grid — this was an explicit UX
+  choice by Ofir. See "The daily-schedule data source" section below and
+  **`docs/daily-schedule-source.md`** before touching this code — it has a
+  real gotcha (block duration/count is not fixed per day).
+- **UI consistency: `<HomeButton />`** — every feature page now uses the
+  same small fixed icon-only "back to landing page" button
+  (`app/components/HomeButton.tsx`) instead of each page having its own
+  text-link variant. Per Ofir, this is now standard: **add it to every new
+  page** going forward (see "Working conventions" below).
 
 ### Architecture map (`web/`)
 
