@@ -41,24 +41,42 @@ just static prototypes — see below for what that means concretely.
   only, weight 800 for headings, no serif font). The hero photo on the
   landing page was kept but muted (`grayscale(45%) saturate(85%)
   brightness(0.82)` + a neutral-toned scrim, not the original teal-tinted
-  one). Tokens live in `web/app/globals.css`.
+  one). Tokens live in `web/app/globals.css`. The app icon/favicon/PWA icons
+  were later replaced with Ofir's "Tel Aviv Control" logo (source:
+  `web/scripts/logo-source.png`, regenerated via `web/scripts/gen-icons.mjs`).
+- **Second feature shipped: "איך עבד X?"** (`/how-worked`) — pick an
+  employee and a shift count (1–5), see which 2-hour-ish time blocks they
+  were scheduled in for their last N *completed* shifts, read live from a
+  **third Drive folder** ("סידורים יומיים", daily schedules — separate from
+  the two roster folders). See "The daily-schedule data source" section
+  below and **`docs/daily-schedule-source.md`** before touching this code —
+  it has a real gotcha (block duration/count is not fixed per day).
 
 ### Architecture map (`web/`)
 
 ```
 app/
-  page.tsx                    — landing page (hero photo, one menu item so far:
-                                 "סטטיסטיקה חודשית" → /monthly-stats)
+  page.tsx                    — landing page (hero photo, two menu items:
+                                 "סטטיסטיקה חודשית" → /monthly-stats,
+                                 "איך עבד X?" → /how-worked)
   login/page.tsx              — sign-in gate UI ("Sign in with Google")
   monthly-stats/
     page.tsx                  — thin server component (metadata only)
     MonthlyStatsClient.tsx    — client: SchedulePicker + live matrix fetch/render
+  how-worked/
+    page.tsx                  — thin server component (metadata only)
+    HowWorkedClient.tsx        — client: employee+count pickers, renders the
+                                  unified block-grid table (see below)
   components/
     ShiftMatrix.tsx           — the matrix itself, ported from reference/v2-current.html
     SchedulePicker.tsx        — native <select> of live Drive files, sorted newest-first
   api/
-    schedule-files/route.ts   — GET: lists both Drive folders live (force-dynamic, no cache)
+    schedule-files/route.ts   — GET: lists both roster Drive folders live (force-dynamic)
     schedule-matrix/route.ts  — GET ?fileId=...: downloads+parses that roster sheet live
+    employees/route.ts         — GET: employee name list from the newest roster file
+    employee-schedule/route.ts — GET ?employee=&count=: walks back across months
+                                  (roster files) collecting completed shifts, fetches
+                                  their daily-schedule blocks, merges into a unified grid
     auth/login/route.ts       — starts the Google sign-in OAuth flow
     auth/callback/route.ts    — exchanges code, checks ALLOWED_EMAILS, sets session cookie
     auth/logout/route.ts      — clears the session cookie
@@ -70,9 +88,18 @@ lib/
   google-auth.ts               — OAuth2Client for **Drive access** (Desktop-app client,
                                   offline refresh token, env: GOOGLE_OAUTH_CLIENT_ID/
                                   SECRET/REFRESH_TOKEN)
-  google-drive.ts               — lists+sorts schedule files from both Drive folders
-  sheets.ts                     — downloads a sheet via Drive's export endpoint (xlsx),
-                                  parses with exceljs, runs the matrix algorithm
+  google-drive.ts               — lists+sorts schedule files from both roster Drive folders
+  xlsx-utils.ts                  — shared Drive-download + cell-parsing helpers (extracted
+                                  from sheets.ts so daily-schedule.ts can reuse them)
+  sheets.ts                     — parses the monthly roster tab (matrix algorithm,
+                                  employee names, per-employee work-days)
+  daily-schedule.ts              — finds/parses the "סידורים יומיים" daily-schedule
+                                  files; block detection is data-driven (see
+                                  docs/daily-schedule-source.md), not a fixed row range
+  shift-grid.ts                   — merges several days' (possibly different-duration)
+                                  block lists into one time-aligned row grid
+  date-utils.ts                  — "today" in Israel's timezone + date comparison,
+                                  used to exclude not-yet-happened shifts
   auth-login.ts                 — OAuth2Client for the **sign-in gate** (separate
                                   Web-application client, env: GOOGLE_LOGIN_CLIENT_ID/
                                   SECRET, ALLOWED_EMAILS)
@@ -80,7 +107,11 @@ lib/
   hebrew-months.ts               — parses "ספטמבר 2026"-style file names ↔ month/year
 scripts/
   get-drive-refresh-token.mjs   — one-time local script to mint the Drive refresh token
-  gen-icons.mjs / icon.svg       — regenerates PWA icons from one SVG source
+  gen-icons.mjs / logo-source.png — regenerates PWA icons from one source image
+  inspect-daily-schedule.mjs,
+  inspect-specific-file(2).mjs,
+  test-unified-grid.mjs         — diagnostic tools for the daily-schedule data source,
+                                  see docs/daily-schedule-source.md
 .env.local.example               — documents every required env var and how to get it
 ```
 
@@ -96,6 +127,13 @@ scripts/
    its own Authorized redirect URIs registered per environment (both
    `http://localhost:3000/api/auth/callback` and
    `https://accn-p.vercel.app/api/auth/callback` are registered).
+   **Already broke once**: editing the consent screen's Branding fields
+   (App name/support email/etc.) somehow dropped the `localhost` redirect
+   URI, producing `Error 400: redirect_uri_mismatch` on local login only
+   (production kept working). Fixed by re-adding it in Cloud Console →
+   Credentials → this client → Authorized redirect URIs. If local login
+   ever breaks again with that exact error, check this list first before
+   assuming something in the code changed.
 
 **Both clients currently sit under the same OAuth consent screen, which is
 still in "Testing" publishing status.** Concretely this means:
@@ -163,6 +201,38 @@ static export.
   or a 30-day month, so it works correctly for any month length (verified
   against both a 30-day and a 31-day month in production).
 
+## The daily-schedule data source and "איך עבד X?"
+
+A **third, separate Drive folder** — "סידורים יומיים" (daily schedules),
+ID `0B8vJAzgBs7x1VG1GUDB2VjhIVmc` — holds one file per month with one tab
+per day-of-month, showing hour-by-hour role assignments (not the same as
+the monthly roster files). Full layout, and the one real gotcha (block
+duration/count varies per day — most days are 12×2h blocks, but at least
+one confirmed day uses 16×1.5h blocks), are in
+**`docs/daily-schedule-source.md`** — read that before touching
+`lib/daily-schedule.ts` or `lib/shift-grid.ts`.
+
+The `/how-worked` feature ("איך עבד X?"), end to end:
+1. `/api/employees` gets the employee list from the newest roster file.
+2. `/api/employee-schedule?employee=&count=` finds that employee's
+   **completed** (not future-scheduled) worked days in the newest roster
+   file, and if there aren't enough for the requested count, **walks
+   backward across older roster files** (via `listScheduleFiles()`, already
+   sorted newest-first across both roster folders) until it has enough or
+   hits a 6-month cap.
+3. For each collected day, it finds that month's daily-schedule file and
+   extracts the employee's blocks (`lib/daily-schedule.ts`).
+4. Because different days' blocks can have different durations, the result
+   is **not** rendered by row index — `lib/shift-grid.ts` merges all
+   selected days into one shared, correctly time-aligned row grid first.
+5. Frontend UX (per Ofir, twice-corrected): selecting an employee always
+   resets the shift-count choice to unselected, and nothing is fetched
+   until **both** an employee and a count are explicitly chosen — no
+   fetch-on-employee-select-alone, and no stale count carried over to a
+   newly selected employee.
+6. "Today" for excluding future-scheduled shifts is computed in **Israel's
+   timezone** (`lib/date-utils.ts`), not the server's own (Vercel runs UTC).
+
 ## The matrix algorithm (validated in Python, now also in TypeScript)
 
 Fully specified in **`docs/matrix-algorithm.md`**; `lib/sheets.ts` is a
@@ -215,6 +285,15 @@ header took several iterations — this is preserved exactly in
   logical (source) character order regardless of the page's overall RTL
   direction.
 
+**A second, smaller bidi gotcha** found in `HowWorkedClient.tsx`: an inline
+hour range like `09:00–11:00` rendered **reversed** (`11:00-09:00`) inside
+an RTL table cell — the numeric-dash-numeric sequence has no strong
+directional anchor, so the browser's bidi algorithm reordered it relative to
+the surrounding RTL context. Fix: wrap it in
+`<span style={{ direction: "ltr", unicodeBidi: "isolate" }}>`. Any future
+inline "number–number" or "number:number-number:number" style label inside
+RTL layout should get this same treatment preemptively.
+
 ## Privacy constraint — resolved
 
 The matrix contains **real coworkers' names**. Ofir previously declined a
@@ -262,12 +341,22 @@ Refresh latency in production matches the original estimate: on the order of
 4. **Auto-refresh vs. refresh-on-load** — still just refresh-on-load /
    manual "רענון" button for the file list; true polling/push was discussed
    as likely overkill and never revisited.
-5. Landing page currently has exactly **one** menu item
-   ("סטטיסטיקה חודשית") by design — Ofir said the menu will grow later;
-   don't assume more items are wanted without being asked.
+5. Landing page now has **two** menu items ("סטטיסטיקה חודשית",
+   "איך עבד X?"). Ofir has added a second one himself when he had a need for
+   it — still don't pre-emptively add more without being asked, but the
+   "exactly one, don't grow it" framing from earlier no longer applies.
 6. `env.txt` at the repo root (stray plaintext secrets, predates git) —
    flagged to Ofir, not deleted automatically; worth deleting once he
    confirms.
+7. The daily-schedule block-duration gotcha (see above) was found by
+   spot-checking **one** file Ofir pointed at. It's unknown how many other
+   days/months use non-2-hour blocks, or whether even-more-different
+   structures (different name-column ranges, more than 2 teams, etc.) exist
+   elsewhere. The current code is *robust* to different block durations but
+   still assumes the C:M column range and the row-pair-per-block structure
+   hold everywhere — if a future bug report suggests wrong data for a
+   specific day, check that day's raw structure with
+   `scripts/inspect-specific-file.mjs` before assuming the bug is elsewhere.
 
 ## Working conventions used so far
 
