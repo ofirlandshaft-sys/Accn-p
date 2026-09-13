@@ -3,6 +3,7 @@ import { listScheduleFiles } from "@/lib/google-drive";
 import { getEmployeeWorkDays } from "@/lib/sheets";
 import { findDailyScheduleFile, getEmployeeBlocksForDays, type DailyBlock } from "@/lib/daily-schedule";
 import { getIsraelToday, isOnOrBefore } from "@/lib/date-utils";
+import { buildUnifiedGrid } from "@/lib/shift-grid";
 
 export const dynamic = "force-dynamic";
 
@@ -97,18 +98,19 @@ export async function GET(request: Request) {
       }
     }
 
-    const shifts = collected.map((c) => ({
-      day: c.day,
-      month: c.month,
-      year: c.year,
-      blocks: blocksByKey.get(`${c.year}-${c.month}-${c.day}`) ?? [],
-    }));
+    const perColumnBlocks = collected.map((c) => blocksByKey.get(`${c.year}-${c.month}-${c.day}`) ?? []);
+    // Different days can use different block durations (e.g. 12x2h vs 16x1.5h) —
+    // merge them into one shared, correctly-aligned row grid rather than assuming
+    // every column shares the same block boundaries.
+    const grid = buildUnifiedGrid(perColumnBlocks);
 
     return NextResponse.json({
       employee,
       totalWorkDaysThisMonth: currentMonthCompletedShifts ?? 0,
       monthsSpanned: monthsScanned,
-      shifts,
+      columns: collected,
+      rows: grid.rows,
+      worked: grid.worked,
     });
   } catch (err) {
     console.error(`Failed to build "how did ${employee} work" view:`, err);

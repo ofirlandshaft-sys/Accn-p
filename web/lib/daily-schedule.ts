@@ -15,12 +15,16 @@ const SPREADSHEET_MIME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
 
-// Per Ofir: only the C12:M35 block matters — 12 two-hour blocks (rows 12-13,
-// 14-15, ..., 34-35), start/end time in columns C/D, employee names scattered
-// across columns E-M (team/role columns) — we only care *whether* the
-// employee's name appears anywhere in a block, not which role/team.
+// Per Ofir: only the C:M block matters — pairs of rows starting at row 12,
+// each pair a time block (start/end in columns C/D on the first row),
+// employee names scattered across columns E-M (team/role columns) — we only
+// care *whether* the employee's name appears anywhere in a block, not which
+// role/team. The block DURATION is not fixed: most days use 2-hour blocks
+// (12 blocks, ending row 35), but some use other granularities — e.g. a
+// 1.5-hour-block day (16 blocks, ending row 43) was found in the archive.
+// So the block count/end row is detected per-sheet, not assumed.
 const BLOCK_FIRST_ROW = 12;
-const BLOCK_LAST_ROW = 35;
+const MAX_BLOCKS = 48; // safety cap — covers even 30-minute blocks for a full 24h cycle
 const START_COL = 3; // C
 const END_COL = 4; // D
 const NAME_SCAN_FIRST_COL = 5; // E
@@ -48,9 +52,10 @@ export async function findDailyScheduleFile(month: number, year: number): Promis
 
 function extractBlocksFromSheet(ws: ExcelJS.Worksheet, employeeName: string): DailyBlock[] {
   const blocks: DailyBlock[] = [];
-  for (let row = BLOCK_FIRST_ROW; row <= BLOCK_LAST_ROW; row += 2) {
-    const start = extractTimeLabel(ws.getRow(row).getCell(START_COL)) ?? "?";
-    const end = extractTimeLabel(ws.getRow(row).getCell(END_COL)) ?? "?";
+  for (let i = 0, row = BLOCK_FIRST_ROW; i < MAX_BLOCKS; i++, row += 2) {
+    const start = extractTimeLabel(ws.getRow(row).getCell(START_COL));
+    const end = extractTimeLabel(ws.getRow(row).getCell(END_COL));
+    if (start == null || end == null) break; // reached the closing marker / end of the block list
 
     let worked = false;
     for (const r of [row, row + 1]) {
