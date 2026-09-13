@@ -1,0 +1,21 @@
+.button {
+  position: fixed;
+  top: 14px;
+  inset-inline-end: 16px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-decoration: none;
+}
+
+.button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}

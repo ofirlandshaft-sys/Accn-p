@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import HomeButton from "../components/HomeButton";
 import SchedulePicker from "../components/SchedulePicker";
 import ShiftMatrix from "../components/ShiftMatrix";
 import type { MatrixData } from "@/lib/matrix-types";
@@ -48,29 +48,9 @@ export default function MonthlyStatsClient() {
 
   return (
     <div style={{ direction: "rtl" }}>
-      <Link
-        href="/"
-        style={{
-          position: "fixed",
-          top: 14,
-          insetInlineEnd: 16,
-          zIndex: 10,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-          fontSize: 13,
-          color: "var(--text-muted)",
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          padding: "6px 12px",
-          textDecoration: "none",
-        }}
-      >
-        › חזרה לתפריט
-      </Link>
+      <HomeButton />
 
-      <div style={{ maxWidth: 1180, margin: "0 auto", padding: "36px 20px 0" }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto", padding: "64px 20px 0" }}>
         <SchedulePicker selectedId={selected?.id ?? null} onSelect={handleSelect} />
       </div>
 

@@ -70,6 +70,8 @@ app/
   components/
     ShiftMatrix.tsx           — the matrix itself, ported from reference/v2-current.html
     SchedulePicker.tsx        — native <select> of live Drive files, sorted newest-first
+    HomeButton.tsx            — small fixed icon-only "back to landing page" button —
+                                  put this on every feature page (see Working conventions)
   api/
     schedule-files/route.ts   — GET: lists both roster Drive folders live (force-dynamic)
     schedule-matrix/route.ts  — GET ?fileId=...: downloads+parses that roster sheet live
@@ -397,3 +399,11 @@ Refresh latency in production matches the original estimate: on the order of
   was used throughout to verify RTL/vertical-text rendering, the login flow,
   and the live deployment — keep doing this for any UI or auth-flow change
   that's hard to reason about from source alone.
+- **Every feature page gets `<HomeButton />`** (`app/components/HomeButton.tsx`)
+  — the small fixed icon-only "back to the landing page" button, top-right.
+  Per Ofir (explicit, standing instruction): add it to every new page going
+  forward, not just the two that already have it (`monthly-stats`,
+  `how-worked`). It replaced an earlier text-link version
+  ("› חזרה לתפריט" / "› חזרה לתפריט הראשי") that looked inconsistent between
+  pages. Remember to leave enough top padding on the page content (64px has
+  been enough so far) so the fixed button doesn't overlap the heading.
