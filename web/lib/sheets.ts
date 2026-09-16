@@ -127,6 +127,30 @@ export async function getRosterNames(fileId: string): Promise<string[]> {
   return names;
 }
 
+/**
+ * Per-employee count of cells whose exact text matches one of `codes`, in
+ * this roster file's day columns. Generic — backs every "count occurrences
+ * of these exact shift codes per employee, per year" report
+ * (`/api/roster-code-counts`; currently "מחלה" and "כוננויות"). Returns
+ * counts for every employee row *in this file* — including ones who may not
+ * be on the current/newest roster (people who left, or weren't hired yet in
+ * an older file) — callers should only keep entries matching the names they
+ * actually care about.
+ */
+export async function getCodeCounts(fileId: string, codes: readonly string[]): Promise<Map<string, number>> {
+  const codeSet = new Set(codes);
+  const { names, employeeRows, dayColumns, ws } = await parseRoster(fileId);
+  const counts = new Map<string, number>();
+  names.forEach((name, i) => {
+    let count = 0;
+    for (const col of dayColumns) {
+      if (codeSet.has(cellText(ws.getRow(employeeRows[i]).getCell(col)))) count++;
+    }
+    counts.set(name, count);
+  });
+  return counts;
+}
+
 /** Day-of-month numbers (ascending) on which this employee had an actual worked shift. */
 export async function getEmployeeWorkDays(fileId: string, employeeName: string): Promise<number[]> {
   const { names, employeeRows, dayColumns, ws } = await parseRoster(fileId);

@@ -111,3 +111,37 @@ export async function listScheduleFiles(): Promise<ScheduleFile[]> {
 
   return files;
 }
+
+/**
+ * Lists roster files for exactly one calendar year — the "current months"
+ * folder (a file for this year might not have been archived yet) plus that
+ * year's own archive subfolder, if one exists. Used by the sick-days report
+ * (`/api/sick-days`), which scans many years one at a time: listing only the
+ * one year subfolder needed, rather than every archive year folder like
+ * listScheduleFiles() does, keeps each request small enough to safely finish
+ * within Vercel's serverless function time budget (measured: downloading and
+ * parsing a whole year's ~12-18 files takes a few seconds; doing that for
+ * every year from 2016 on in one request took 14+ seconds, in practice
+ * exceeding it).
+ */
+export async function listScheduleFilesForYear(year: number): Promise<ScheduleFile[]> {
+  const auth = getAuthClient();
+
+  const [currentChildren, archiveTopChildren] = await Promise.all([
+    listChildren(auth, CURRENT_FOLDER_ID),
+    listChildren(auth, ARCHIVE_FOLDER_ID),
+  ]);
+
+  const yearFolder = archiveTopChildren.find((f) => f.mimeType === FOLDER_MIME_TYPE && f.name === String(year));
+  const archiveDirectFiles = archiveTopChildren.filter((f) => SPREADSHEET_MIME_TYPES.has(f.mimeType));
+  const yearFolderFiles = yearFolder ? await listChildren(auth, yearFolder.id) : [];
+
+  const byId = new Map<string, ScheduleFile>();
+  for (const f of [...currentChildren, ...archiveDirectFiles, ...yearFolderFiles]) {
+    if (!SPREADSHEET_MIME_TYPES.has(f.mimeType)) continue;
+    const scheduleFile = toScheduleFile(f, "archive");
+    if (scheduleFile.year === year) byId.set(scheduleFile.id, scheduleFile);
+  }
+
+  return [...byId.values()];
+}

@@ -1,0 +1,173 @@
+.page {
+  direction: rtl;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 64px 20px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.top {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.h1 {
+  font-family: var(--font-heebo), "Segoe UI", Arial, sans-serif;
+  font-weight: 800;
+  font-size: clamp(24px, 3.6vw, 32px);
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+.lede {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.state {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  padding: 4px 2px;
+}
+
+.error {
+  color: #c0554a;
+}
+
+.warn {
+  color: light-dark(#96650f, #e0b25c);
+}
+
+.meta {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.tableScroll {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+}
+
+.table th,
+.table td {
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+}
+
+.nameHead {
+  position: sticky;
+  right: 0;
+  top: 0;
+  z-index: 3;
+  background: var(--surface-2);
+  width: 130px;
+  min-width: 130px;
+  height: 36px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-align: right;
+  padding-inline-end: 10px;
+}
+
+.nameCell {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--surface);
+  text-align: right;
+  padding: 0 10px;
+  font-weight: 600;
+  font-size: 12.5px;
+  white-space: nowrap;
+  height: 32px;
+  border-right: 1px solid var(--border);
+}
+
+.yearHead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-2);
+  width: 56px;
+  min-width: 56px;
+  height: 36px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell {
+  width: 56px;
+  min-width: 56px;
+  height: 32px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-strong);
+  background: light-dark(rgba(79, 70, 229, 0.08), rgba(129, 140, 248, 0.1));
+}
+
+.zero {
+  color: var(--text-muted);
+  font-weight: 400;
+  opacity: 0.55;
+  background: transparent;
+}
+
+.unreliableMark {
+  color: light-dark(#96650f, #e0b25c);
+  font-weight: 800;
+  margin-inline-start: 2px;
+}
+
+.unavailable {
+  color: var(--text-muted);
+  font-weight: 400;
+  opacity: 0.4;
+  background: transparent;
+  font-style: italic;
+}
+
+.totalHead {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  background: var(--surface-2);
+  width: 64px;
+  min-width: 64px;
+  height: 36px;
+  font-size: 12px;
+  font-weight: 700;
+  border-left: none;
+  border-right: 1px solid var(--border-strong);
+}
+
+.totalCell {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  text-align: center;
+  font-weight: 800;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  border-left: none;
+  border-right: 1px solid var(--border-strong);
+}

@@ -62,19 +62,21 @@
 | `ח` (also seen as `ח.`) | **Vacation / leave**   | **Confirmed** — matches the row's own `העדר` total exactly when counted. |
 | (blank)      | Not scheduled / day off, non-absence | Inferred, not explicitly confirmed |
 | `פ`          | Frequently occurring; likely "available/free" (`פנוי`) | Unconfirmed |
-| `s`          | Standby — matches the `sby` summary column | Fairly confident |
+| `s` / `s1` / `s2` / `s3` | **Standby** ("כוננות") — all four variants | **Confirmed by Ofir** (used by the `/standby` report, `lib/sheets.ts`'s `getCodeCounts`). `s` alone also matches the `sby` summary column. |
 | `ת`          | Likely a drill/exercise (`תרגיל`) | Unconfirmed |
 | `ע`          | Unknown — possibly a different duty type | **Unconfirmed — ask Ofir** |
 | `ג`          | Unknown | **Unconfirmed — ask Ofir** |
 | `ט`          | Unknown (appears in contiguous blocks for one person) | **Unconfirmed — ask Ofir** |
 | `z`          | Unknown (also referenced in the `logbook` tab as "באג ספירת (z)" — i.e. there was a known counting *bug* around this code historically) | **Unconfirmed — ask Ofir** |
 | `אפ` / `אע`  | Unknown, two similar variants | **Unconfirmed — ask Ofir** |
-| `מ.`         | Unknown, possibly "מחלה" (sick) given the period | **Unconfirmed — ask Ofir** |
+| `מ` / `מ.` / `.מ` | **Sick day** ("מחלה") — all three variants | **Confirmed by Ofir** (used by the `/sick-days` report, `lib/sheets.ts`'s `getCodeCounts`) |
 
-**Only `x`/`|x|` and `ח` have been empirically validated** (their counts
-match existing summary columns exactly). Everything else is a reasonable
-guess. If a future feature needs to interpret any of the unconfirmed codes
-correctly, ask Ofir rather than assuming.
+**`x`/`|x|` and `ח` have been empirically validated** (their counts match
+existing summary columns exactly), and **`מ`/`מ.`/`.מ` and
+`s`/`s1`/`s2`/`s3` were confirmed directly by Ofir** (no summary column to
+cross-check the sick codes against; `s` alone does have one). Everything
+else is a reasonable guess. If a future feature needs to interpret any of
+the remaining unconfirmed codes correctly, ask Ofir rather than assuming.
 
 ## How this was read during prototyping
 

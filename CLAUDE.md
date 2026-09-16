@@ -60,14 +60,29 @@ just static prototypes — see below for what that means concretely.
   (`app/components/HomeButton.tsx`) instead of each page having its own
   text-link variant. Per Ofir, this is now standard: **add it to every new
   page** going forward (see "Working conventions" below).
+- **Third and fourth features shipped: "מחלה" and "כוננויות"** (`/sick-days`,
+  `/standby`) — for every employee on the **newest** roster, counts how many
+  times a given set of exact cell-text codes appears in their row, one
+  column per year from the current year back to **2017** (Ofir's explicit
+  cutoff — see "The roster-code-count reports" section below for why: 2016
+  and earlier use an older sheet layout the parser can't read), plus a total
+  column, sorted by total descending. "מחלה" counts `מ`/`מ.`/`.מ` (sick day);
+  "כוננויות" counts `s`/`s1`/`s2`/`s3` (standby). Both are the **same
+  component** (`app/components/RosterCodeCountReport.tsx`) parameterized by
+  title/description/codes — per Ofir ("same script exactly, same table"),
+  this was built generic from the start rather than as two copy-pasted
+  features, and should stay that way for any future report shaped the same
+  way (pick a code set, count occurrences per employee per year).
 
 ### Architecture map (`web/`)
 
 ```
 app/
-  page.tsx                    — landing page (hero photo, two menu items:
+  page.tsx                    — landing page (hero photo, four menu items:
                                  "סטטיסטיקה חודשית" → /monthly-stats,
-                                 "איך עבד X?" → /how-worked)
+                                 "איך עבד X?" → /how-worked,
+                                 "מחלה" → /sick-days,
+                                 "כוננויות" → /standby)
   login/page.tsx              — sign-in gate UI ("Sign in with Google")
   monthly-stats/
     page.tsx                  — thin server component (metadata only)
@@ -76,11 +91,23 @@ app/
     page.tsx                  — thin server component (metadata only)
     HowWorkedClient.tsx        — client: employee+count pickers, renders the
                                   unified block-grid table (see below)
+  sick-days/
+    page.tsx                  — thin server component: renders
+                                  RosterCodeCountReport with codes=["מ","מ.",".מ"]
+  standby/
+    page.tsx                  — thin server component: renders
+                                  RosterCodeCountReport with codes=["s","s1","s2","s3"]
   components/
     ShiftMatrix.tsx           — the matrix itself, ported from reference/v2-current.html
     SchedulePicker.tsx        — native <select> of live Drive files, sorted newest-first
     HomeButton.tsx            — small fixed icon-only "back to landing page" button —
                                   put this on every feature page (see Working conventions)
+    RosterCodeCountReport.tsx — the shared client for /sick-days and /standby: fetches
+                                  employees once, then one year at a time back to 2017
+                                  (see "The roster-code-count reports" below), renders
+                                  the sorted per-year/total table. Reuse this (don't
+                                  copy-paste) for any future "count these exact codes
+                                  per employee per year" report.
   api/
     schedule-files/route.ts   — GET: lists both roster Drive folders live (force-dynamic)
     schedule-matrix/route.ts  — GET ?fileId=...: downloads+parses that roster sheet live
@@ -89,6 +116,11 @@ app/
                                   (roster files) collecting completed shifts, fetches
                                   their daily-schedule blocks + shift-manager name, groups
                                   them into one or more hour-scheme-aligned tables
+    roster-code-counts/route.ts — GET ?year=YYYY&codes=a,b,c: one year's per-employee
+                                  counts of exactly those cell-text codes, across that
+                                  year's roster files (see below for why this is one
+                                  year per request, not all at once) — backs both
+                                  /sick-days and /standby
     auth/login/route.ts       — starts the Google sign-in OAuth flow
     auth/callback/route.ts    — exchanges code, checks ALLOWED_EMAILS, sets session cookie
     auth/logout/route.ts      — clears the session cookie
@@ -100,11 +132,16 @@ lib/
   google-auth.ts               — OAuth2Client for **Drive access** (Desktop-app client,
                                   offline refresh token, env: GOOGLE_OAUTH_CLIENT_ID/
                                   SECRET/REFRESH_TOKEN)
-  google-drive.ts               — lists+sorts schedule files from both roster Drive folders
+  google-drive.ts               — listScheduleFiles(): lists+sorts schedule files from
+                                  both roster Drive folders (every year). Also
+                                  listScheduleFilesForYear(year): the same but scoped
+                                  to one calendar year, for the roster-code-count reports
   xlsx-utils.ts                  — shared Drive-download + cell-parsing helpers (extracted
                                   from sheets.ts so daily-schedule.ts can reuse them)
   sheets.ts                     — parses the monthly roster tab (matrix algorithm,
-                                  employee names, per-employee work-days)
+                                  employee names, per-employee work-days, and
+                                  getCodeCounts: generic per-employee exact-code counts,
+                                  used by /sick-days and /standby)
   daily-schedule.ts              — finds/parses the "סידורים יומיים" daily-schedule
                                   files; block detection is data-driven (see
                                   docs/daily-schedule-source.md), not a fixed row range;
@@ -261,6 +298,65 @@ The `/how-worked` feature ("איך עבד X?"), end to end:
 7. "Today" for excluding future-scheduled shifts is computed in **Israel's
    timezone** (`lib/date-utils.ts`), not the server's own (Vercel runs UTC).
 
+## The roster-code-count reports ("מחלה", "כוננויות")
+
+`/sick-days` and `/standby` both count, per employee, how many times cell
+text exactly matches one of a small set of codes in their row's day
+columns — `מ`/`מ.`/`.מ` (per Ofir, all three mean "מחלה", sick day) for
+`/sick-days`; `s`/`s1`/`s2`/`s3` (standby) for `/standby` — for every
+roster file back to **2017** (Ofir's explicit cutoff — see the gotcha below
+for why), one column per year. **Both pages render the same generic
+component**, `app/components/RosterCodeCountReport.tsx` (props: `title`,
+`description`, `codes`, `oldestYear`) — per Ofir ("same script exactly,
+same table"), this was built as one reusable component from the start
+rather than two near-duplicate ones. **The next report shaped like this
+(pick a code set, count per employee per year) should reuse this component
+and `/api/roster-code-counts`, not copy-paste a third page.**
+
+**Why this is split into one request per year** (`/api/roster-code-counts?
+year=YYYY&codes=a,b,c`, `lib/google-drive.ts`'s `listScheduleFilesForYear`,
+not `listScheduleFiles`): measured directly against the real Drive data,
+downloading+parsing every roster file from 2016–2026 (143 files) in one
+request took **14+ seconds** regardless of concurrency (6, 20, 40, or
+all-at-once all landed around 14-22s — Google's own per-account throughput
+for this export endpoint appears to be the bottleneck, not client-side
+concurrency). That's over Vercel's serverless function time budget (Hobby
+plan: hard-capped at 10s, can't be raised). One year at a time (12-18
+files) measured at **2-4 seconds** — safely inside that budget. So
+`RosterCodeCountReport.tsx` fetches `/api/employees` once for the name
+list, then walks the years **sequentially, one HTTP request per year**,
+merging results into the table as they arrive (the table fills in and
+re-sorts live rather than showing nothing until a 14+ second scan
+finishes).
+
+**Real gotcha found via this — why the cutoff is 2017, not 2016**: roster
+files from **2016 (and most of 2014-2015)** use a different sheet layout
+than every file from 2017 onward — confirmed by direct inspection: the
+modern layout has the date header on row 3 and the first employee on row 4;
+the old layout has an extra header row (a "סימולטור" block) pushing those
+down to row 5 and row 6 respectively. `parseRoster` (`lib/sheets.ts`)
+doesn't handle this older layout, so those files fail to parse — tested
+against real 2016 data, all files failed. Ofir's call, once told this: stop
+the scan at 2017 rather than show 2016 as a confusing "unavailable" column.
+`oldestYear` defaults to `2017` in `RosterCodeCountReport.tsx`'s props —
+that's the one place to change if this is revisited (or override the prop
+per-page for a report that's separately been verified to go back further).
+The **graceful-degradation machinery is still in the code as a safety net**
+for any *other* file that fails to parse for whatever reason within the
+2017+ range (rare, but seen once — one 2020 file failed out of 13):
+`getCodeCounts` catches parse errors per-file, the API returns
+`filesScanned`/`filesFailed` counts, and the client marks a year
+"unavailable" (shown as "–" with a "?" on the header, plus an explanation
+banner) only if **every** file for that year failed or none were found —
+never a silent, misleading "0". If Ofir ever wants 2014-2016 counted too,
+someone needs to reverse-engineer that older layout properly (and possibly
+several even-older ones) — don't guess at it blindly, inspect the real
+files first the way `docs/daily-schedule-source.md`'s investigation did.
+
+Both reports only include employees who are on the **newest** roster
+file — older files' rows for people no longer employed (or not yet hired)
+are intentionally ignored, per Ofir's explicit instruction.
+
 ## The matrix algorithm (validated in Python, now also in TypeScript)
 
 Fully specified in **`docs/matrix-algorithm.md`**; `lib/sheets.ts` is a
@@ -360,19 +456,21 @@ Refresh latency in production matches the original estimate: on the order of
    only the row-relative `overlap/total` is built. A `min(shifts[i],
    shifts[j])` symmetric toggle was proposed and never built.
 2. Several shift codes are **still unconfirmed** (`ע`, `ג`, `ט`, `z`, `אפ`/
-   `אע`, `מ.`) — see `docs/data-source.md`. Only `x`/`|x|` (worked shift)
-   and `ח` (vacation) are empirically confirmed. Ask Ofir before any new
-   feature depends on interpreting these.
+   `אע`) — see `docs/data-source.md`. `x`/`|x|` (worked shift), `ח`
+   (vacation), and — as of the "מחלה" feature — `מ`/`מ.`/`.מ` (sick day,
+   confirmed by Ofir directly) are the confirmed ones. Ask Ofir before any
+   new feature depends on interpreting the rest.
 3. **Finish publishing the OAuth consent screen to Production** (see above)
    — now unblocked since a real domain exists, but not yet done. Needed to
    stop the Drive refresh token from expiring every 7 days.
 4. **Auto-refresh vs. refresh-on-load** — still just refresh-on-load /
    manual "רענון" button for the file list; true polling/push was discussed
    as likely overkill and never revisited.
-5. Landing page now has **two** menu items ("סטטיסטיקה חודשית",
-   "איך עבד X?"). Ofir has added a second one himself when he had a need for
-   it — still don't pre-emptively add more without being asked, but the
-   "exactly one, don't grow it" framing from earlier no longer applies.
+5. Landing page now has **four** menu items ("סטטיסטיקה חודשית",
+   "איך עבד X?", "מחלה", "כוננויות"). Ofir has added each one himself when
+   he had a need for it — still don't pre-emptively add more without being
+   asked, but the "exactly one, don't grow it" framing from earlier no
+   longer applies.
 6. `env.txt` at the repo root (stray plaintext secrets, predates git) —
    flagged to Ofir, not deleted automatically; worth deleting once he
    confirms.
@@ -385,6 +483,16 @@ Refresh latency in production matches the original estimate: on the order of
    hold everywhere — if a future bug report suggests wrong data for a
    specific day, check that day's raw structure with
    `scripts/inspect-specific-file.mjs` before assuming the bug is elsewhere.
+8. **Roster files from 2016 and most of 2014-2015 use an older sheet layout
+   `lib/sheets.ts`'s `parseRoster` can't read** (see "The roster-code-count
+   reports" above for specifics) — `/sick-days` and `/standby` are
+   configured to stop at 2017 rather than show 2016 as a confusing
+   unavailable column, but this also means *any* feature reading roster
+   files that old (not just these two) would hit the same parse failure.
+   Not fixed — would need someone to inspect those older files' real layout
+   first, the way `docs/daily-schedule-source.md`'s investigation did for
+   the daily schedule. Ask Ofir whether it's worth the effort before
+   attempting it.
 
 ## Working conventions used so far
 
